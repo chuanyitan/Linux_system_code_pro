@@ -1,0 +1,101 @@
+
+信号提供了异步处理的机制，是一种重要的通知事件的方式，每一个信号都有一个名字并以SIG开头信号被定义成正整数(信号编号)  定义在头文件<signal.h>
+信号编号:man 7 signal
+
+.不存在编号为0的信号，因为kill函数对0编号（空信号）信号有特殊应用： Kill用于发送信号测试 
+
+2.信号的三种处理方式我们称之为信号的处理方式
+  .忽略此信号   .捕捉信号    .执行系统默认动作
+  注：SIGKILL  SIGSTOP 这两种信号不能被忽略也不能被捕捉 它们向超级用户提供了可靠的终止或停止进程的方法
+  
+3.sighandler_t signal(int signum, sighandler_t handler);
+  signal 函数 返回指向之前的该信号的处理函数的指针
+  func值是常量SIG_IGN表示忽略  SIG_DFL表示默认  SIG_ERR错误返回值
+  #define   SIG_ING  (void (*)()) 1
+  #define   SIG_DFL  (void (*)()) 0
+  #define   SIG_ERR  (void (*)()) -1
+  
+  向指进程发送一个信号 kill -USR2 pid
+  
+4.可中断的系统调用   [当捕捉到某个信号时，被中断的是内核中执行的系统调用.]
+  
+  早期UNIX系统的一个特性是：如果在进程执行一个低速系统调用而阻塞期间捕捉到一个信号，则该系统调用就被中断不再继续执行。该系统调用返回出错，其errno设置为EINTR。
+  
+  为了支持这种特性，将系统调用分成两类：低速系统调用和其他系统调用。
+  低速系统调用是可能会使进程永远阻塞的一类系统调用，它们包括：
+  .在读某些类型的文件时，如果数据并不存在则可能会使调用者永远阻塞（管道、终端设备以及网络设备）。
+  .在写这些类型的文件时，如果不能立即接受这些数据，则也可能会使调用者永远阻塞。
+  .打开文件，在某种条件发生之前也可能会使调用者阻塞（例如，打开终端设备，它要等待直到所连接的调制解调器回答了电话）。
+  .pause(按照定义，它使调用进程睡眠直至捕捉到一个信号)和wait。
+  .某种ioctl操作。
+  .某些进程间通信函数
+  注意:有的实现支持被打断的系统调重启
+
+5. int raise(int signo);  给自身发送一个信号
+   int kill(pid_t pid,int signo)
+   
+   .pid > 0  将信号发送给进程ID为pid的进程。
+   .pid == 0 将信号发送给与发送信号进程同一组的进程，而且发送进程有许可权向其发送信号的权限。
+             这里用的术语“所有进程”不包括实现定义的系统进程集(包括内核进程以及init)
+   .pid < 0  将信号发送给其进程组gid等于pid绝对值的进程，而且发送进程有许可权向其发送信号的权限
+   .pid ==-1 将信号发送给发送进程有权限对其发送信号的系统上的所有进程(不包括系统进程集)
+   
+   超级用户可将信号发送给任一进程，除此外基本规则是：发送者实际有效用户ID必须等接收者的实际或有效用户ID
+   可用kill 发送编号0的空信号来测试是否发送信号  错误则返回-1 errno设置为ESRCH
+ 
+6.int pause(void)   使调用进程挂起直至捕捉到一个信号
+   只有执行了一个信号处理程序并从其返回时， pause才返回。在这种情况下,pause返回-1，errno设置为EINTR。
+ 
+7.可靠信号术语和语义
+   在产生了信号时，内核通常在进程表中设置某种形式的一个标志.当对信号做了这种动作时，我们说向一个进程递送了一个信号。在信号产生（generation）和递送（delivery）之间的时间间隔内，称信号未决（pending）。
+
+   进程可以选择“信号递送阻塞”。如果为进程产生了一个选择为阻塞的信号，而且对该信号的动作是系统默认动作或捕捉该信号，则为该进程将此信号保持为未决状态，直到该进程(a)对此信号解除了阻塞，或者(b)将对此信号的动作更改为忽略内核才决定,对信号的处理方式决定时间为递送信号给进程时而不是产生信号时
+   信号为递送阻塞时同种信号不排队,解除了阻塞时如果存在未决信号 则原子性的递送
+  
+8.信号集
+  每个进程都有一个信号屏蔽字，它规定了当前要阻塞递送到该进程的信号集。对于每种可能的信号，该屏蔽字中都有一bit位与之对应。信号数可能会超过一个整型数所包含的二进制位数，因此POSIX.1定义了
+  一个新数据类型sigset_t，它保持一个信号集
+  int sigempytset(sigset_t *set)  初始化set指向的信号集，清除其中的所有信号
+  int sigfillset(sigset_t *set)   初始化set指向的信号集，其中包含所有信号 
+  int sigaddset(sigset_t *set,int signo);
+  int sigdelset(sigset_t *set,int signo);
+  以上均成功返回0 出错返回-1
+  
+  测试某个信号是否被设置在信号集中
+  int sigismember(sigset_t *set,int signo) 为真返回1 为假返回0   出错返回-1 
+  
+9.sigprocmask  函数检测或更改进程的屏蔽字
+  int sigprocmask(int flag,const sigset_t *set,sigset_t *oldset);
+  若set非空指针，则按照flag方式进行设置新的信号屏蔽字
+SIG_BLOCK : 取当前进程的屏蔽字与set的并集   <不影响其它基础上 设置屏蔽>
+
+SIG_UNBLOCK：取当前进程的屏蔽字与set的补集 的交集  <不影响其它基础上  解除屏蔽>
+
+SIG_SETMASK:直接设置
+
+检测当前进程哪些信号未决
+int sigpending(sigset_t *set)
+10.sigpending 返当前信号集，各个信号对于调用进程是阻塞的而不能递送的，因而一定是当前未决的。
+
+11.int sigsuspend(sigset_t *mask)
+  把进程信号屏蔽字设成为mask并原子的阻塞的等侍一个信号来
+
+12.int sigaction(int how,const sigset_t *act,sigset_t *oldact );
+   改变一个信号的行为
+
+
+13.长跳转语句 setjmp sigsetjmp   longjmp  siglongjmp
+
+homework:
+  用alarm 设计成可以多个闹钟
+  
+  initTime
+
+  addTimer(int sec,int mode(ONCE/LOOP),func_t *work,void *work_arg)
+
+  addTimer(10,LOOP,say_hello,NULL);
+  int value=555;
+  addTime(2,ONCE,printValue,&value);
+  addTime(3,LOOP,func,"hello func");
+
+  delTimer
