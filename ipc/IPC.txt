@@ -1,0 +1,151 @@
+进程间通信 interprocess communiction
+1.磁盘文件
+2.信号
+3.管道
+4.消息队列
+5.共享内存
+6.信号量
+7.套接字socket
+==============================================
+.管道(匿名管道pipe/命名管道fifo)(Unix系统ipc最古老的形式)
+  int pipe(int fd[2]);  成功返回0 失败返回-1
+  read  fd[0]   write:fd[1]
+  用于有公共祖先的进程间通信,为半又工通信管道,某些实现成全又工管道,但是不可移植的
+  
+  .当读一个写端已闭的管道时,在所有数据被读完后返回0 以显式达到文件尾结束
+  .当写一个读端被关闭的管道时,产生SIGPIPE的信号,write返回-1
+  
+#define PIPE_BUF        4096
+  管道每次可以原子性的读写最大的数据为 PIPE_BUF
+  
+标准I/O实现
+  FILE *popen(char *cmd,const char *mode)
+  先执行fork 然后调用exec以执行cmd,
+  如果type为 "r" 则返回文件指连接到cmd的stdout,
+  "w"连接到cmd的stdin
+  
+  int  pclose(FILE *fp);
+  
+协同进程
+  unix系统过滤程序从标准输入读取数据,对其进适当处理后写到标准输出.
+  当一个程序产生某个过滤程序的输入,同时又读取该过滤程序的输出时,则该过滤程序就成为协同进程.
+  
+FIFO 命名管道
+  int mkfifo(char *path,mode_t mode);
+  打一个FIFO时,没有设置O_NONBLOCK产生下列影响
+     .读打开FIFO要阻塞到其他进程为写而打开,同样,写打开要阻塞到某个进程为读打开
+     .如果指定了O_NONBLOCK,则只读open立即返回,那么只写open将出错返回-1,errno==ENXIO
+
+///////////////////////////////////////////
+XSI IPC
+.消息队列
+.信号量
+.共享内存
+
+标识与键
+  每个内核中的 XSI IPC结构都用一个非负的整数的标识符加以引用,每一个对ipc对象都与一个键关联
+  
+  创建一个键  key_t ftok(char *path,int id);
+  path必须引用的是一个现存的文件  产生键时只使用id参数的低8位
+
+
+权限结构
+  XSI IPC为每一个IPC结构设置了一个ipc_perm结构 它至少实现以下几项
+    struct ipc_perm
+    {
+        __kernel_key_t  key;
+        __kernel_uid_t  uid;
+        __kernel_gid_t  gid;
+        __kernel_uid_t  cuid;   //有效用户id
+        __kernel_gid_t  cgid;
+        __kernel_mode_t mode;    //access mode
+    };
+
+消息队列   :消息队列是消息的链表,存入在内核中并由消息队列标识符标识
+    每一个消息队列有一个msqid_ds结构
+struct msqid_ds {   //linux 下的实现  每个平台互少实现前几项
+        struct ipc_perm msg_perm;
+        __kernel_time_t msg_stime;      /* last msgsnd time */
+        __kernel_time_t msg_rtime;      /* last msgrcv time */
+        __kernel_time_t msg_ctime;      /* last change time */
+        unsigned short msg_qnum;        /* number of messages in queue */
+        unsigned short msg_qbytes;      /* max number of bytes on queue */
+        __kernel_ipc_pid_t msg_lspid;   /* pid of last msgsnd */
+        __kernel_ipc_pid_t msg_lrpid;   /* last receive pid */
+		
+        unsigned long  msg_lcbytes;     /* Reuse junk fields for 32 bit */
+        unsigned long  msg_lqbytes;     /* ditto */
+        unsigned short msg_cbytes;      /* current number of bytes on queue */		
+        struct msg *msg_first;          /* first message on queue,unused  */
+        struct msg *msg_last;           /* last message in queue,unused */
+};
+
+打开一个现存队列或创建一个新的队列
+  int msgget(key_t key,int flag);  成功返回消息队列ID  失败返回-1
+  当key为 IPC_PRIVATE 或 key是一个并不存在对象 并且flag为IPC_CREAT | 0644 创建一个新的队列
+  
+
+控制操作一个消息队列  
+   int msgctl(int msgpid,int cmd,struct msqid_ds *buf);
+  
+  cmd决定执行的操作
+    IPC_STAT  取此队列的msqid_ds结构存入buf中
+    IPC_SET   按buf中的值设置msg_per.uid,msg_qbytes(只有超级用户能改),msg_perm.gid, msg_perm.mode
+	  因为要修改信息,所以能执行此命令的只有root user和有效用户ID等于msg_per.uid或msg_per.cuid
+  
+    IPC_RMID  删除该消息队列以及仍在队列中的所有数据,该删除立即生效
+  
+将数据发送到消息队列
+   int msgsnd(int msgqid,const void *ptr,size_t nbytes,int flag);
+   每一个消由三部分组成:正长整型类型字段,非负长度以及实际数据字节,消息总是放在队尾   
+  
+获取一个消息
+   ssize_t msgrcv(int msqid,void *ptr,size_t nbytes,long type,int flag);
+     nbytes说明数缓冲区的长度,如果消息大于nbytes,而且flag设置MSG_NOERROR,则截短并不通知我们,
+	 如是没有 MSG_NOERROR,则出错返回 E2BIG
+	 
+	 参数type指定我们要哪种消息
+	 type==0 返回队列第一个消息
+	 type >0 返回消息类型为type的第一个信息
+	 type <0 返回消息类型小于或等于type绝对值的消息,如果有多个,返回类型值最小的
+  
+
+信号量集
+  创建信号量集 或 获取现在存的信号量集
+  int semget(key_t key,int nsems,int flag)
+  nsems:表示信号量的数量
+  flag :同msgget
+  
+操作一个现有的信号量
+  int semctl(int semid,int semnum,int cmd,.../* union semun arg */)
+    semnum: [0] -- [nsems-1]
+
+
+  int semop(int semid,struct sembuf semoparray[],size_t nops)  //nops 操作几个信号量
+ 
+共享存储
+  void *shmget(key_t key,size_t size,int flag);
+
+  int   shmctl(int shmid,int cmd,.../*  */);
+  void  *shmat(int shmid,void *addr,int flag);
+
+  int shmdt(const void *shmaddr);
+
+进程间通信方式：
+.信号
+.管道(命名 匿名)
+.消息队列
+.信号量
+.共享内存
+.socket
+.磁盘文件
+.流机制(依赖于驱动的实现)<极少用>
+
+homework:
+1.用fifo实现两个进程聊天
+
+2.用信号量控制进程的栅栏模型（完善/var/ftp/pub/system/ipc/sem/03sem.c）
+3.父进程A  建立子进程B  之后A进程依次提交1---1000的数据给B进程  B进程处理是否有数字0 如果有则打印出来(用共享内存实现)
+
+
+
