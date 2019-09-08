@@ -48,85 +48,85 @@ char *get_time()
 
 void *doServer(void *arg)
 {
-	int err,ret,i,maxfd,num,connfd;
-	pthread_mutex_lock(&mm);
+    int err,ret,i,maxfd,num,connfd;
+    pthread_mutex_lock(&mm);
     connfd=*(int *)arg;
     flag=0;
     pthread_mutex_unlock(&mm);
     pthread_cond_signal(&ok);
-	pthread_detach(pthread_self());
-	
-	char buf[1024];
-	fd_set fd_read;
-	fd_set fd_select;
-	struct timeval timeout;           //超时时间备份
+    pthread_detach(pthread_self());
+    
+    char buf[1024];
+    fd_set fd_read;
+    fd_set fd_select;
+    struct timeval timeout;         //超时时间备份
     struct timeval timeout_select;  //用于select
     timeout.tv_sec = 10;
     timeout.tv_usec = 0;
 
     FD_ZERO(&fd_read);
-	FD_ZERO(&fd_select);
-	FD_SET(connfd, &fd_read);  //将监听套接字加入fd_set
-	maxfd = connfd;
+    FD_ZERO(&fd_select);
+    FD_SET(connfd, &fd_read);  //将监听套接字加入fd_set
+    maxfd = connfd;
 
-	while(1)
-        {	
+    while(1)
+    {	
     //每次都需要重新赋值
-            fd_select = fd_read;
-            timeout_select = timeout;
-            //err = select(maxfd+1, &fd_select, NULL, NULL, NULL);     
-            err = select(maxfd+1, &fd_select, NULL, NULL, (struct timeval *)&timeout_select);
-			printf(" the err is %d\n",err);
-            if(err < 0)
-            {  
-					printf("[%s]fail to select disconnect.\n",get_time());
-                    shutdown(connfd,SHUT_RDWR);
-                    pthread_exit((void *)0);       
-            }
-            if(err == 0)
-                    printf("[%s]timeout\n",get_time());
+        fd_select = fd_read;
+        timeout_select = timeout;
+        //err = select(maxfd+1, &fd_select, NULL, NULL, NULL);     
+        err = select(maxfd+1, &fd_select, NULL, NULL, (struct timeval *)&timeout_select);
+       	printf(" the err is %d\n",err);
+        if(err < 0)
+        {  
+ 	    printf("[%s]fail to select disconnect.\n",get_time());
+ 	    shutdown(connfd,SHUT_RDWR);
+ 	    pthread_exit((void *)0);       
+        }
+        if(err == 0)
+            printf("[%s]timeout\n",get_time());
 
-            //检测监听套接字是否可读
-            //从1开始查看连接套接字是否可读，因为上面已经处理过0（sockfd）
+        //检测监听套接字是否可读
+        //从1开始查看连接套接字是否可读，因为上面已经处理过0（sockfd）
 
-            if(FD_ISSET(connfd, &fd_select))
+        if(FD_ISSET(connfd, &fd_select))
+        {
+            printf("[%s]connfd is  ok\n",get_time());
+            num = read(connfd, buf, 1024);
+            if(num ==0)
             {
-                    printf("[%s]connfd is  ok\n",get_time());
-                    num = read(connfd, buf, 1024);
-					if(num ==0)
-					{
-						printf("[%s]fail to select disconnect.\n",get_time());
-                        shutdown(connfd,SHUT_RDWR);
-                        pthread_exit((void *)0);   
-					}
-                    if(num > 0)
-                    {
-                            //收到 客户端数据并打印
-                            buf[num] = '\0';
-                            printf("[%s]receive buf from client connfd is: %s\n",get_time(),buf);
-                    }
-                         //回复客户端
-                    num = write(connfd, "ok", sizeof("ok"));
-                    if(num <0)
-                    {
-                         printf("[%s]fail to select disconnect.\n",get_time());
-                         shutdown(connfd,SHUT_RDWR);
-                         pthread_exit((void *)0);   
-                    }
-                    else
-                    {
-                            printf("[%s]send reply\n",get_time());
-                    }
+                printf("[%s]fail to select disconnect.\n",get_time());
+                shutdown(connfd,SHUT_RDWR);
+                pthread_exit((void *)0);   
+            }
+            if(num > 0)
+            {
+                 //收到 客户端数据并打印
+                buf[num] = '\0';
+                printf("[%s]receive buf from client connfd is: %s\n",get_time(),buf);
+            }
+                 //回复客户端
+            num = write(connfd, "ok", sizeof("ok"));
+            if(num <0)
+            {
+                 printf("[%s]fail to select disconnect.\n",get_time());
+                 shutdown(connfd,SHUT_RDWR);
+                 pthread_exit((void *)0);   
             }
             else
             {
-                    printf("[%s]no data\n",get_time());                  
+                printf("[%s]send reply\n",get_time());
             }
+        }
+        else
+        {
+                printf("[%s]no data\n",get_time());                  
+        }
         
 
-        }
-		shutdown(connfd,SHUT_RDWR);
-        pthread_exit((void *)0);
+    }
+    shutdown(connfd,SHUT_RDWR);
+    pthread_exit((void *)0);
 
 }
 
